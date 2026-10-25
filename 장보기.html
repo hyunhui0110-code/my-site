@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>우리 집 장보기</title>
+<style>
+  :root {
+    --bg: #fdf8ef;
+    --card: #ffffff;
+    --ink: #4a3f35;
+    --muted: #a39686;
+    --line: #f0e6d6;
+    --green: #8cc7a1;
+    --green-dark: #5fa67a;
+    --orange: #f6c08f;
+    --orange-soft: #fdebd8;
+    --danger: #e59a8c;
+    --shadow: 0 4px 14px rgba(150, 120, 80, 0.10);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { margin: 0 0 4px; font-size: 1.9rem; }
+  .sub { margin: 0 0 22px; color: var(--muted); font-size: 0.95rem; }
+
+  /* 추가 칸 */
+  .add {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    background: var(--card); padding: 14px; border-radius: 18px;
+    box-shadow: var(--shadow); margin-bottom: 24px;
+  }
+  .add input, .add select {
+    font: inherit; color: var(--ink);
+    border: 2px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; background: #fffdf9; min-width: 0;
+  }
+  .add input:focus, .add select:focus { outline: none; border-color: var(--orange); }
+  #name { flex: 2 1 180px; }
+  #memo { flex: 1 1 130px; }
+  #cat  { flex: 1 1 150px; }
+  .add button {
+    font: inherit; font-weight: 700; color: #fff;
+    background: var(--green-dark); border: 0; border-radius: 12px;
+    padding: 10px 20px; cursor: pointer; flex: 0 0 auto;
+  }
+  .add button:hover { background: #4f9469; }
+
+  /* 카드 */
+  .grid {
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    align-items: start;
+  }
+  .card {
+    background: var(--card); border-radius: 20px; padding: 16px 16px 10px;
+    box-shadow: var(--shadow);
+  }
+  .card h2 {
+    margin: 0 0 8px; font-size: 1.1rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .count {
+    font-size: 0.8rem; font-weight: 600; color: #b9783e;
+    background: var(--orange-soft); padding: 2px 10px; border-radius: 999px;
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 4px; border-top: 1px dashed var(--line);
+  }
+  li:first-child { border-top: 0; }
+  .empty { color: var(--muted); font-size: 0.9rem; padding: 8px 4px; }
+
+  .check {
+    appearance: none; -webkit-appearance: none; flex: 0 0 auto;
+    width: 26px; height: 26px; margin: 0; cursor: pointer;
+    border: 2px solid var(--green); border-radius: 8px; background: #fff;
+    display: grid; place-content: center;
+  }
+  .check:checked { background: var(--green); }
+  .check:checked::after { content: "✓"; color: #fff; font-weight: 800; font-size: 16px; line-height: 1; }
+
+  .label { flex: 1; min-width: 0; cursor: pointer; overflow-wrap: anywhere; }
+  .memo {
+    margin-left: 6px; font-size: 0.82rem; color: #b9783e;
+    background: var(--orange-soft); padding: 1px 8px; border-radius: 999px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .memo.blank { background: none; color: var(--muted); padding: 1px 4px; opacity: 0; }
+  li:hover .memo.blank, .memo.blank:focus { opacity: 1; }
+
+  li.done .label .text { text-decoration: line-through; color: var(--muted); }
+  li.done { opacity: 0.6; }
+
+  .del {
+    flex: 0 0 auto; border: 0; background: none; cursor: pointer;
+    color: var(--muted); font-size: 1rem; width: 28px; height: 28px; border-radius: 8px;
+  }
+  .del:hover { color: #fff; background: var(--danger); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 999px;
+    font-size: 0.9rem; opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .toast.show { opacity: 0.9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛒 우리 집 장보기</h1>
+  <p class="sub">항목을 누르면 체크돼요. 이 브라우저에 자동으로 저장돼요.</p>
+
+  <form class="add" id="addForm">
+    <input id="name" placeholder="살 것 (예: 콩나물)" autocomplete="off" required>
+    <input id="memo" placeholder="수량·메모 (선택)" autocomplete="off">
+    <select id="cat"></select>
+    <button type="submit">추가</button>
+  </form>
+
+  <div class="grid" id="grid"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const STORAGE_KEY = "jangbogi-list-v1";
+
+  const CATEGORIES = [
+    { id: "veg",   name: "🥬 채소·과일" },
+    { id: "meat",  name: "🥩 고기·생선" },
+    { id: "dairy", name: "🥛 유제품·달걀" },
+    { id: "food",  name: "🍚 가공식품·양념" },
+    { id: "home",  name: "🧻 생활용품" },
+  ];
+
+  const DEFAULT_ITEMS = {
+    veg:   ["대파", "양파", "감자", "당근", "사과", "바나나"],
+    meat:  ["돼지고기", "닭고기", "고등어"],
+    dairy: ["우유", "달걀", "요거트", "치즈"],
+    food:  ["두부", "쌀", "라면", "간장"],
+    home:  ["휴지", "주방세제", "쓰레기봉투"],
+  };
+
+  let nextId = 1;
+  const newId = () => Date.now().toString(36) + "-" + (nextId++);
+
+  function defaultList() {
+    const list = [];
+    for (const cat of CATEGORIES) {
+      for (const name of DEFAULT_ITEMS[cat.id]) {
+        list.push({ id: newId(), name, memo: "", cat: cat.id, done: false });
+      }
+    }
+    return list;
+  }
+
+  // 저장소를 못 쓰는 환경(사생활 보호 창 등)에서도 화면은 동작하도록 감싼다
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data)) return data;
+      }
+    } catch (e) {}
+    return defaultList();
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch (e) {
+      showToast("저장하지 못했어요. 브라우저 설정을 확인해 주세요.");
+    }
+  }
+
+  let items = load();
+
+  const grid = document.getElementById("grid");
+  const catSelect = document.getElementById("cat");
+  const toastEl = document.getElementById("toast");
+
+  for (const cat of CATEGORIES) {
+    const opt = document.createElement("option");
+    opt.value = cat.id;
+    opt.textContent = cat.name;
+    catSelect.appendChild(opt);
+  }
+
+  let toastTimer;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1600);
+  }
+
+  function render() {
+    grid.innerHTML = "";
+    for (const cat of CATEGORIES) {
+      const inCat = items.filter(it => it.cat === cat.id);
+      // 안 산 것은 위, 산 것은 아래 (각자 원래 순서는 유지)
+      const sorted = [...inCat.filter(it => !it.done), ...inCat.filter(it => it.done)];
+      const left = inCat.filter(it => !it.done).length;
+
+      const card = document.createElement("section");
+      card.className = "card";
+
+      const h2 = document.createElement("h2");
+      h2.textContent = cat.name;
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = inCat.length ? `${left}개 남음` : "비어 있음";
+      h2.appendChild(count);
+      card.appendChild(h2);
+
+      const ul = document.createElement("ul");
+      if (!sorted.length) {
+        const empty = document.createElement("li");
+        empty.className = "empty";
+        empty.textContent = "아직 항목이 없어요.";
+        ul.appendChild(empty);
+      }
+      for (const it of sorted) ul.appendChild(renderItem(it));
+      card.appendChild(ul);
+      grid.appendChild(card);
+    }
+  }
+
+  function renderItem(it) {
+    const li = document.createElement("li");
+    if (it.done) li.classList.add("done");
+
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "check";
+    box.id = "chk-" + it.id;
+    box.checked = it.done;
+    box.addEventListener("change", () => {
+      it.done = box.checked;
+      save();
+      render();
+    });
+
+    const label = document.createElement("label");
+    label.className = "label";
+    label.htmlFor = box.id;
+    const text = document.createElement("span");
+    text.className = "text";
+    text.textContent = it.name;
+    label.appendChild(text);
+
+    const memo = document.createElement("span");
+    memo.className = "memo" + (it.memo ? "" : " blank");
+    memo.textContent = it.memo || "+ 메모";
+    memo.title = "눌러서 수량·메모 고치기";
+    memo.tabIndex = 0;
+    const editMemo = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const v = prompt(`'${it.name}'의 수량·메모`, it.memo);
+      if (v === null) return;
+      it.memo = v.trim();
+      save();
+      render();
+    };
+    memo.addEventListener("click", editMemo);
+    memo.addEventListener("keydown", (e) => { if (e.key === "Enter") editMemo(e); });
+    label.appendChild(memo);
+
+    const del = document.createElement("button");
+    del.className = "del";
+    del.type = "button";
+    del.textContent = "✕";
+    del.title = "삭제";
+    del.setAttribute("aria-label", `${it.name} 삭제`);
+    del.addEventListener("click", () => {
+      items = items.filter(x => x.id !== it.id);
+      save();
+      render();
+      showToast(`'${it.name}' 삭제했어요`);
+    });
+
+    li.append(box, label, del);
+    return li;
+  }
+
+  document.getElementById("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const nameEl = document.getElementById("name");
+    const memoEl = document.getElementById("memo");
+    const name = nameEl.value.trim();
+    if (!name) return;
+    items.push({ id: newId(), name, memo: memoEl.value.trim(), cat: catSelect.value, done: false });
+    save();
+    render();
+    showToast(`'${name}' 추가했어요`);
+    nameEl.value = "";
+    memoEl.value = "";
+    nameEl.focus();
+  });
+
+  render();
+</script>
+</body>
+</html>
